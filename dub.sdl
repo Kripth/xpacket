@@ -1,3 +1,4 @@
 name "packet-maker"
-description "Packet encoder/decoder"
+description "Packet encoder and decoder generator"
 authors "Kripth"
+license "MIT"
