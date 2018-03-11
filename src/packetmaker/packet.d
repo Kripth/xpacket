@@ -46,75 +46,24 @@ class Packet {
 
 }
 
-enum EndianType {
+class PacketImpl(Endian endianness, T, Endian id_endianness, L, Endian length_endianness) : Packet if((isIntegral!T || isVar!T) && (isIntegral!L || isVar!L)) {
 
-	bigEndian = cast(int)Endian.bigEndian,
-	littleEndian = cast(int)Endian.littleEndian,
-	inherit,
-	var,
-	
-}
+	// enums and aliases used by mixin template Make when not overriden
 
-class PacketImpl(Endian endianness, T, EndianType id_endianness, L, EndianType length_endianness) : Packet if(isIntegral!T && isIntegral!L) {
+	protected enum Endian __packetEndianness = endianness;
 
-	// enums
+	protected enum Endian __packetIdEndianness = id_endianness;
 
-	protected enum __packet;
+	protected enum Endian __packetLengthEndianness = length_endianness;
 
-	protected enum Endian __endianness = endianness;
+	protected alias __PacketId = T;
 
-	protected enum EndianType __id_endianness = id_endianness == EndianType.inherit ? cast(EndianType)endianness : id_endianness;
-
-	protected enum EndianType __length_endianness = length_endianness == EndianType.inherit ? cast(EndianType)endianness : length_endianness;
-
-	// aliases
-
-	protected alias __Id = T;
-
-	protected alias __Length = L;
+	protected alias __PacketLength = L;
 
 }
 
-template PacketImpl(Endian endianness, T, EndianType id_endianness, L) if(isIntegral!T && (isIntegral!L || isVar!L)) {
+alias PacketImpl(Endian endianness, T, Endian id_endianness, L) = PacketImpl!(endianness, T, id_endianness, L, endianness);
 
-	static if(isIntegral!L) alias PacketImpl = PacketImpl!(endianness, T, id_endianness, L, EndianType.inherit);
-	else alias PacketImpl = PacketImpl!(endianness, T, id_endianness, L.Base, EndianType.var);
+alias PacketImpl(Endian endianness, T, L, Endian length_endianness) = PacketImpl!(endianness, T, endianness, L, length_endianness);
 
-}
-
-template PacketImpl(Endian endianness, T, L) if((isIntegral!T || isVar!T) && (isIntegral!L || isVar!L)) {
-
-	static if(isIntegral!T) alias PacketImpl = PacketImpl!(endianness, T, EndianType.inherit, L);
-	else alias PacketImpl = PacketImpl!(endianness, T.Base, EndianType.var, L);
-
-}
-
-unittest {
-
-	import packetmaker.varint;
-
-	alias A = PacketImpl!(Endian.bigEndian, ubyte, ushort);
-	static assert(is(A.__packet));
-	static assert(A.__endianness == Endian.bigEndian);
-	static assert(A.__id_endianness == EndianType.bigEndian);
-	static assert(A.__length_endianness == EndianType.bigEndian);
-
-	alias B = PacketImpl!(Endian.littleEndian, ubyte, varuint);
-	static assert(B.__endianness == Endian.littleEndian);
-	static assert(B.__id_endianness == EndianType.littleEndian);
-	static assert(B.__length_endianness == EndianType.var);
-	static assert(is(B.__Length == uint));
-
-	alias C = PacketImpl!(Endian.bigEndian, ushort, EndianType.littleEndian, uint);
-	static assert(C.__endianness == Endian.bigEndian);
-	static assert(C.__id_endianness == EndianType.littleEndian);
-	static assert(C.__length_endianness == EndianType.bigEndian);
-	static assert(is(C.__Id == ushort));
-
-	alias D = PacketImpl!(Endian.littleEndian, varint, varuint);
-	static assert(D.__id_endianness == EndianType.var);
-	static assert(D.__length_endianness == EndianType.var);
-	static assert(is(D.__Id == int));
-	static assert(is(D.__Length == uint));
-
-}
+alias PacketImpl(Endian endianness, T, L) = PacketImpl!(endianness, T, endianness, L, endianness);

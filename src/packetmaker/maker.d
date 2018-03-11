@@ -5,7 +5,6 @@ import std.system : Endian;
 import std.traits;
 
 import packetmaker.buffer : InputBuffer, OutputBuffer;
-import packetmaker.packet : EndianType;
 import packetmaker.varint : isVar;
 
 // attributes
@@ -26,47 +25,53 @@ enum LittleEndian;
 
 enum Bytes;
 
-struct LengthImpl { string type; EndianType endianness; }
+struct LengthImpl { string type; int endianness; }
 
-LengthImpl EndianLength(T)(Endian endianness) if(isIntegral!T) { return LengthImpl(T.stringof, cast(EndianType)endianness); }
+LengthImpl EndianLength(T)(Endian endianness) if(isIntegral!T) { return LengthImpl(T.stringof, endianness); }
 
-template Length(T) if(isIntegral!T) { enum Length = LengthImpl(T.stringof, EndianType.inherit); }
+template Length(T) if(isIntegral!T) { enum Length = LengthImpl(T.stringof, -1); }
 
 template Length(T) if(isVar!T) { enum Length = LengthImpl(T.Base.stringof, EndianType.var); }
 
 // maker
 
-mixin template MakeImpl(bool nested) /*if(is(typeof(this) : Packet))*/ {
+enum EndianType {
+	
+	bigEndian = cast(int)Endian.bigEndian,
+	littleEndian = cast(int)Endian.littleEndian,
+	var,
+	
+}
 
-	import std.system : Endian;
+mixin template Make(Endian endianness, L, EndianType length_endianness) {
+
+	import std.traits : isNested;
 
 	import packetmaker.buffer : InputBuffer, OutputBuffer;
-	import packetmaker.maker : write, writeImpl, writeMembers, read, readImpl, readMembers;
-	import packetmaker.packet : Packet, EndianType;
+	import packetmaker.maker : EndianType, write, writeImpl, writeMembers, read, readImpl, readMembers;
+	import packetmaker.packet : Packet;
 
-	//static if(nested) static assert(is(__traits(parent, typeof(this)) : PacketBase));
+	static assert(is(typeof(this) == class) || is(typeof(this) == struct));
 
-	//TODO create constructor
+	private enum bool __packet = is(typeof(this) : Packet);
 
-	private enum bool __is_packet = is(typeof(this) : Packet) && is(__packet);
-
-	static assert(__is_packet, "Make must be used inside a Packet");
+	private enum bool __nested = __packet && isNested!(typeof(this)) && __traits(hasMember, __traits(parent, typeof(this)), "__packet");
 	
 	static if(__traits(hasMember, typeof(this), "ID")) {
 
-		private enum __inherited_id;
+		static assert(__traits(hasMember, typeof(this), "__PacketId") && __traits(hasMember, typeof(this), "__packetIdEndianness"));
 
 		override void encodeId(InputBuffer buffer) {
-			writeImpl!(__id_endianness, __Id)(buffer, ID);
+			static if(isVar!__PacketId) writeImpl!(EndianType.var, __PacketId.Base)(buffer, ID);
+			else writeImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
 		}
 
 		override void decodeId(OutputBuffer buffer) {
-			readImpl!(__id_endianness, __Id)(buffer);
+			static if(isVar!__PacketId) readImpl!(EndianType.var, __PacketId.Base)(buffer);
+			else readImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer);
 		}
 
-	} else static if(nested && __traits(hasMember, __traits(parent, typeof(this)), "__inherited_id")) {
-
-		private enum __inherited_id;
+	} else static if(__nested) {
 
 		override void encodeId(InputBuffer buffer) {
 			__traits(parent, typeof(this)).encodeId(buffer);
@@ -78,22 +83,64 @@ mixin template MakeImpl(bool nested) /*if(is(typeof(this) : Packet))*/ {
 
 	}
 
-	override void encodeBody(InputBuffer buffer) {
-		static if(nested) {
-			__traits(parent, typeof(this)).encodeBody(buffer);
-		}
-		super.encodeBody(buffer);
-		writeMembers!(cast(EndianType)__endianness, __Length, __length_endianness)(buffer, this);
-	}
+	static if(__packet) {
 
-	override void decodeBody(OutputBuffer buffer) {
-		super.decodeBody(buffer);
-		readMembers!(cast(EndianType)__endianness, __Length, __length_endianness)(buffer, this);
+		override void encodeBody(InputBuffer buffer) {
+			static if(__nested) {
+				__traits(parent, typeof(this)).encodeBody(buffer);
+			}
+			super.encodeBody(buffer);
+			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+		}
+
+		override void decodeBody(OutputBuffer buffer) {
+			super.decodeBody(buffer);
+			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+		}
+
+	} else {
+
+		void encodeBody(InputBuffer buffer) {
+			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+		}
+
+		void decodeBody(OutputBuffer buffer) {
+			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+		}
+
 	}
 	
 }
 
-mixin template Make() { import packetmaker.maker : MakeImpl; mixin MakeImpl!(false); }
+mixin template Make(Endian endianness, Length, Endian length_endianness) {
+
+	import packetmaker.maker : EndianType, Make;
+
+	mixin Make!(endianness, Length, cast(EndianType)length_endianness);
+
+}
+
+mixin template Make(Endian endianness, Length) {
+
+	import packetmaker.maker : EndianType, Make;
+	import packetmaker.varint : isVar;
+
+	static if(isVar!Length) mixin Make!(endianness, Length.Base, EndianType.var);
+	else mixin Make!(endianness, Length, cast(EndianType)endianness);
+
+}
+
+mixin template Make() {
+
+	//TODO check variables
+
+	import packetmaker.maker : EndianType, Make;
+	import packetmaker.varint : isVar;
+
+	static if(isVar!__PacketLength) mixin Make!(__packetEndianness, __PacketLength.Base, EndianType.var);
+	else mixin Make!(__packetEndianness, __PacketLength, cast(EndianType)__packetLengthEndianness);
+
+}
 
 alias write(EndianType endianness, OL, EndianType ole, T) = write!(endianness, OL, ole, OL, ole, T);
 
@@ -146,16 +193,16 @@ void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buff
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
 				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == EndianType.inherit ? "le" : "EndianType." ~ length.endianness.to!string);
+				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "le" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
 			} else {
 				immutable e = "L, le, L, le";
 			}
 			
 			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__buffer.writeBytes(__container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "write!(EndianType.var, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "write!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "write!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else immutable ret = "write!(endianness, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
+			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "packetmaker.maker.write!(EndianType.var, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
+			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "packetmaker.maker.write!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
+			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "packetmaker.maker.write!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
+			else immutable ret = "packetmaker.maker.write!(endianness, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
 			
 			static if(!hasUDA!(__traits(getMember, T, member), Condition)) return ret;
 			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
@@ -226,16 +273,16 @@ T readMembers(EndianType endianness, L, EndianType le, T)(OutputBuffer __buffer,
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
 				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == EndianType.inherit ? "le" : "EndianType." ~ length.endianness.to!string);
+				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "le" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
 			} else {
 				immutable e = "L, le, L, le";
 			}
 
 			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.readBytes(__buffer.data.length-__buffer.index);";
-			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "__container." ~ member ~ "=read!(EndianType.var, " ~ e ~ ", M)(__buffer);";
-			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "__container." ~ member ~ "=read!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer);";
-			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "__container." ~ member ~ "=read!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer);";
-			else immutable ret = "__container." ~ member ~ "=read!(endianness, " ~ e ~ ", M)(__buffer);";
+			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.var, " ~ e ~ ", M)(__buffer);";
+			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer);";
+			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer);";
+			else immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(endianness, " ~ e ~ ", M)(__buffer);";
 			
 			static if(!hasUDA!(__traits(getMember, T, member), Condition)) return ret;
 			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
@@ -522,21 +569,12 @@ unittest {
 	assert(j.b == "hello");
 	assert(j.c == [33, 33, 33, 33, 33]);
 	assert(j.d == [-1]);
-	
-}
 
-mixin template MakeNested() { import packetmaker.maker : MakeImpl; mixin MakeImpl!(true); }
-
-///
-unittest {
-
-	import std.stdio : writeln;
-	
-	import packetmaker.packet : PacketImpl;
+	// nested packets
 	
 	alias Base = PacketImpl!(Endian.bigEndian, ubyte, uint);
 	
-	class A : Base {
+	class K : Base {
 		
 		enum ubyte ID = 1;
 		
@@ -544,43 +582,101 @@ unittest {
 
 		mixin Make;
 		
-		class B : Base {
+		class L : Base {
 			
 			ushort d, e;
 
-			mixin MakeNested;
+			mixin Make;
 			
-			class C : Base {
+			class M : Base {
 				
 				ubyte f, g, h;
 
-				mixin MakeNested;
+				mixin Make;
 				
 			}
 			
 		}
-		
+
+		static class N : Base {
+
+			uint i;
+
+			mixin Make;
+
+		}
+
 	}
 
-	auto a = new A();
-	a.a = 1;
-	a.b = 2;
-	a.c = 3;
-	assert(a.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
+	static assert(K.__packet);
+	static assert(!K.__nested);
+	static assert(K.L.__packet);
+	static assert(K.L.__nested);
+	static assert(K.L.M.__packet);
+	static assert(K.L.M.__nested);
+	static assert(K.N.__packet);
+	static assert(!K.N.__nested);
 
-	auto b = a.new B();
-	b.d = 4;
-	b.e = 5;
-	assert(b.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5]);
+	auto k = new K();
+	k.a = 1;
+	k.b = 2;
+	k.c = 3;
+	assert(k.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
 
-	auto c = b.new C();
-	c.f = 6;
-	c.g = 7;
-	c.h = 8;
-	assert(c.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
+	auto l = k.new L();
+	l.d = 4;
+	l.e = 5;
+	assert(l.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5]);
 
-	auto buffer = c.createInputBuffer();
-	c.encodeBody(buffer);
+	auto m = l.new M();
+	m.f = 6;
+	m.g = 7;
+	m.h = 8;
+	assert(m.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
+
+	auto n = new K.N();
+	n.i = 12;
+	assert(n.autoEncode() == [0, 0, 0, 12]);
+
+	auto buffer = m.createInputBuffer();
+	m.encodeBody(buffer);
 	assert(buffer.data == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
+
+	// structs
+
+	struct O {
+
+		uint a, b;
+		ubyte[] d;
+
+		mixin Make!(Endian.littleEndian, uint);
+
+	}
+
+	auto o = O(1, 2, [3]);
+	buffer.reset();
+	o.encodeBody(buffer);
+	assert(buffer.data == [1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 3]);
+
+	struct P {
+
+		ubyte a;
+
+		mixin Make!(Endian.bigEndian, varuint);
+
+		struct Q {
+
+			ubyte[] b;
+
+			mixin Make!(Endian.bigEndian, varuint);
+
+		}
+
+	}
+
+	auto q = P(12).Q([13]); // structs cannot be nested, because the base struct does not extend packet
+	buffer.reset();
+	q.encodeBody(buffer);
+	assert(buffer.data == [1, 13]);
 	
 }
