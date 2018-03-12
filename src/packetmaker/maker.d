@@ -61,7 +61,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 		static assert(__traits(hasMember, typeof(this), "__PacketId") && __traits(hasMember, typeof(this), "__packetIdEndianness"));
 
-		override void encodeId(InputBuffer buffer) {
+		override void encodeId(InputBuffer buffer) @nogc {
 			static if(isVar!__PacketId) writeImpl!(EndianType.var, __PacketId.Base)(buffer, ID);
 			else writeImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
 		}
@@ -73,7 +73,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	} else static if(__nested) {
 
-		override void encodeId(InputBuffer buffer) {
+		override void encodeId(InputBuffer buffer) @nogc {
 			__traits(parent, typeof(this)).encodeId(buffer);
 		}
 
@@ -85,7 +85,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	static if(__packet) {
 
-		override void encodeBody(InputBuffer buffer) {
+		override void encodeBody(InputBuffer buffer) @nogc {
 			static if(__nested) {
 				__traits(parent, typeof(this)).encodeBody(buffer);
 			}
@@ -100,7 +100,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	} else {
 
-		void encodeBody(InputBuffer buffer) {
+		void encodeBody(InputBuffer buffer) @nogc {
 			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
@@ -144,7 +144,7 @@ mixin template Make() {
 
 alias write(EndianType endianness, OL, EndianType ole, T) = write!(endianness, OL, ole, OL, ole, T);
 
-void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(InputBuffer buffer, T data) {
+void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(InputBuffer buffer, T data) @nogc {
 	static if(isArray!T) {
 		static if(isDynamicArray!T) writeLength!(cle, CL)(buffer, data.length);
 		static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
@@ -173,19 +173,19 @@ void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Inp
 	}
 }
 
-void writeLength(EndianType endianness, L)(InputBuffer buffer, size_t length) {
+void writeLength(EndianType endianness, L)(InputBuffer buffer, size_t length) @nogc {
 	static if(L.sizeof < size_t.sizeof) writeImpl!(endianness, L)(buffer, cast(L)length);
 	else writeImpl!(endianness, L)(buffer, length);
 }
 
-void writeImpl(EndianType endianness, T)(InputBuffer buffer, T value) {
+void writeImpl(EndianType endianness, T)(InputBuffer buffer, T value) @nogc {
 	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) buffer.writeVar!T(value);
 	else static if(endianness == EndianType.bigEndian) buffer.write!(Endian.bigEndian, T)(value);
 	else static if(endianness == EndianType.littleEndian) buffer.write!(Endian.littleEndian, T)(value);
 	else static assert(0, "Cannot encode " ~ T.stringof);
 }
 
-void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buffer, T __container) {
+void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buffer, T __container) @nogc {
 	foreach(member ; Members!(T, DecodeOnly)) {
 		mixin("alias M = typeof(__container." ~ member ~ ");");
 		mixin({
@@ -193,7 +193,7 @@ void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buff
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
 				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "le" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
+				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "endianness" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
 			} else {
 				immutable e = "L, le, L, le";
 			}
@@ -273,7 +273,7 @@ T readMembers(EndianType endianness, L, EndianType le, T)(OutputBuffer __buffer,
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
 				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "le" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
+				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "endianness" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
 			} else {
 				immutable e = "L, le, L, le";
 			}
@@ -345,7 +345,7 @@ unittest {
 	a.b = 2;
 	assert(a.autoEncode() == [44, 0, 0, 0, 12, 0, 2]);
 
-	a.decode([44, 0, 0, 0, 44, 0, 44]);
+	a.autoDecode([44, 0, 0, 0, 44, 0, 44]);
 	assert(a.a == 44);
 	assert(a.b == 44);
 
@@ -359,6 +359,7 @@ unittest {
 		int[2] ints;
 		string str;
 		immutable(bool)[] bools;
+		ubyte[ubyte] aa;
 		
 		mixin Make;
 		
@@ -369,13 +370,16 @@ unittest {
 	b.ints = [0, 256];
 	b.str = "hello";
 	b.bools = [true, false].idup;
-	assert(b.autoEncode() == [45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, true, false]);
+	b.aa[44] = 1;
+	assert(b.autoEncode() == [45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, true, false, 0, 1, 44, 1]);
 
-	b.decode([45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, false, true]);
+	b.autoDecode([45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, false, true, 0, 2, 0, 0, 1, 1]);
 	assert(b.bytes == [1, 2, 3]);
 	assert(b.ints == [0, 256]);
 	assert(b.str == "hello");
 	assert(b.bools == [false, true]);
+	assert(b.aa.length == 2);
+	assert(b.aa[0] == 0 && b.aa[1] == 1);
 
 	class B2 : Test {
 
@@ -415,13 +419,9 @@ unittest {
 
 		@Bytes ubyte[] rest;
 
-		@property string prop() {
-			return "test";
-		}
+		@property string prop() { return "test"; }
 
-		@property string prop(string value) {
-			return value;
-		}
+		@property string prop(string value) { return value; }
 
 		mixin Make;
 
@@ -439,7 +439,7 @@ unittest {
 	c.rest = [5];
 	assert(c.autoEncode() == [8, 1, 0, 0, 0, 0, 0, 0, 1, 99, 200, 1, 9, 0, 1, 1, 0, 0, 1, 2, 5]);
 
-	c.decode([8, 1, 1, 0, 0, 0, 0, 1, 0, 0, 44, 0, 3, 0, 1, 1, 0, 0, 1, 14, 1, 2, 3]);
+	c.autoDecode([8, 1, 1, 0, 0, 0, 0, 1, 0, 0, 44, 0, 3, 0, 1, 1, 0, 0, 1, 14, 1, 2, 3]);
 	assert(c.le == 257);
 	assert(c.be == 256);
 	assert(c.enc == 99); // as previously assigned
@@ -469,10 +469,10 @@ unittest {
 	d.a = 12;
 	assert(d.autoEncode() == [12, 12]);
 
-	d.decode([100, 100]);
+	d.autoDecode([100, 100]);
 	assert(d.a == 100);
 	assert(d.b == 12); // old one
-	d.decode([12, 100]);
+	d.autoDecode([12, 100]);
 	assert(d.a == 12);
 	assert(d.b == 100);
 
@@ -487,11 +487,11 @@ unittest {
 
 	static struct F {
 
-		void encodeBody(InputBuffer buffer) {
+		void encodeBody(InputBuffer buffer) @nogc {
 			buffer.writeBytes(3, 3, 3);
 		}
 
-		void decodeBody(OutputBuffer buffer) {
+		void decodeBody(OutputBuffer buffer) @nogc {
 			buffer.readBytes(3);
 		}
 
@@ -513,7 +513,7 @@ unittest {
 	g.b ~= E(0, 0);
 	assert(g.autoEncode() == [44, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 3, 3, 3]);
 
-	g.decode([12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3]);
+	g.autoDecode([12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3]);
 	assert(g.a == 12);
 	assert(g.b == [E(1, 5)]);
 
@@ -564,7 +564,7 @@ unittest {
 	j.d = [1, 2, 3];
 	assert(j.autoEncode() == [3, 1, 2, 3, 4, 't', 'e', 's', 't', 1, 0, 50, 3, 2, 4, 6]);
 
-	j.decode([2, 1, 2, 5, 'h', 'e', 'l', 'l', 'o', 5, 0, 33, 33, 33, 33, 33, 1, 1]);
+	j.autoDecode([2, 1, 2, 5, 'h', 'e', 'l', 'l', 'o', 5, 0, 33, 33, 33, 33, 33, 1, 1]);
 	assert(j.a == [1, 2]);
 	assert(j.b == "hello");
 	assert(j.c == [33, 33, 33, 33, 33]);
@@ -638,7 +638,7 @@ unittest {
 	n.i = 12;
 	assert(n.autoEncode() == [0, 0, 0, 12]);
 
-	auto buffer = m.createInputBuffer();
+	auto buffer = new InputBuffer();
 	m.encodeBody(buffer);
 	assert(buffer.data == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
 
@@ -678,5 +678,22 @@ unittest {
 	buffer.reset();
 	q.encodeBody(buffer);
 	assert(buffer.data == [1, 13]);
+	
+	// issue #1
+
+	class R : PacketImpl!(Endian.bigEndian, ubyte, varuint) {
+
+		@Length!ushort short[] array;
+
+		mixin Make;
+
+	}
+
+	auto r = new R();
+	r.array = [-1, 0, 1];
+	assert(r.autoEncode() == [0, 3, 255, 255, 0, 0, 0, 1]);
+
+	r.autoDecode([0, 3, 255, 255, 0, 0, 0, 1]);
+	assert(r.array == [-1, 0, 1]);
 	
 }

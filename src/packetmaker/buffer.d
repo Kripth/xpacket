@@ -1,13 +1,11 @@
 ﻿module packetmaker.buffer;
 
-import core.exception : onOutOfMemoryError;
-import core.stdc.stdlib : malloc, realloc, free;
-
 import std.bitmanip : nativeToBigEndian, nativeToLittleEndian, bigEndianToNative, littleEndianToNative;
 import std.string : toUpper;
 import std.system : Endian;
 import std.traits : isIntegral, isFloatingPoint, isSomeChar, Unqual;
 
+import packetmaker.memory : malloc, realloc, free;
 import packetmaker.varint : isVar, Var;
 
 private enum __byte_types = ["bool", "byte", "ubyte", "char"];
@@ -26,13 +24,15 @@ class InputBuffer {
 	this(size_t chunk=256) nothrow @trusted @nogc {
 		assert(chunk > 0);
 		this.chunk = chunk;
-		auto ptr = malloc(chunk);
-		if(ptr is null) onOutOfMemoryError();
-		_data = cast(ubyte[])ptr[0..chunk];
+		_data = cast(ubyte[])malloc(chunk);
 	}
 	
 	@property ubyte[] data() pure nothrow @safe @nogc {
 		return _data[0.._index];
+	}
+
+	void __xdtor() nothrow @nogc {
+		free(_data.ptr);
 	}
 
 	~this() {
@@ -41,9 +41,7 @@ class InputBuffer {
 
 	void reserve(size_t length) nothrow @trusted @nogc {
 		length += _data.length;
-		auto ptr = realloc(_data.ptr, length);
-		if(ptr is null) onOutOfMemoryError();
-		_data = cast(ubyte[])ptr[0..length];
+		_data = cast(ubyte[])realloc(_data.ptr, length);
 	}
 
 	void reset() {

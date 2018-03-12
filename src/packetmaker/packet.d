@@ -4,31 +4,35 @@ import std.system : Endian;
 import std.traits : isIntegral;
 
 import packetmaker.buffer : InputBuffer, OutputBuffer;
+import packetmaker.memory : alloc, free;
 import packetmaker.varint : isVar;
+
+import std.stdio : writeln;
 
 class Packet {
 
-	void encode(InputBuffer buffer) {
+	void encode(InputBuffer buffer) @nogc {
 		encodeId(buffer);
 		encodeBody(buffer);
 	}
 
-	void encodeId(InputBuffer buffer) {}
+	void encodeId(InputBuffer buffer) @nogc {}
 
-	void encodeBody(InputBuffer buffer) {}
+	void encodeBody(InputBuffer buffer) @nogc {}
 
 	ubyte[] autoEncode() {
-		InputBuffer buffer = this.createInputBuffer();
+		InputBuffer buffer = createInputBuffer();
+		scope(exit) free(buffer);
 		encode(buffer);
-		return buffer.data;
+		return buffer.data.dup; // move to GC
 	}
 
-	InputBuffer createInputBuffer() {
-		return new InputBuffer();
+	InputBuffer createInputBuffer() @nogc {
+		return alloc!InputBuffer();
 	}
 
-	void decode(ubyte[] data) {
-		decode(this.createOutputBuffer(data));
+	deprecated("Use autoDecode instead") void decode(ubyte[] data) {
+		autoDecode(data);
 	}
 
 	void decode(OutputBuffer buffer) {
@@ -40,8 +44,14 @@ class Packet {
 
 	void decodeBody(OutputBuffer buffer) {}
 
-	OutputBuffer createOutputBuffer(ubyte[] data) {
-		return new OutputBuffer(data);
+	void autoDecode(ubyte[] data) {
+		OutputBuffer buffer = createOutputBuffer(data);
+		scope(exit) free(buffer);
+		decode(buffer);
+	}
+
+	OutputBuffer createOutputBuffer(ubyte[] data) @nogc {
+		return alloc!OutputBuffer(data);
 	}
 
 }
