@@ -2,3 +2,9 @@ name "packet-maker"
 description "Packet encoder and decoder generator"
 authors "Kripth"
 license "MIT"
+dependency "packet-maker:buffer" version="*"
+subPackage {
+	name "buffer"
+	importPaths "buffer"
+	sourcePaths "buffer"
+}

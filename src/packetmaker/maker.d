@@ -4,7 +4,7 @@ import std.string : capitalize;
 import std.system : Endian;
 import std.traits;
 
-import packetmaker.buffer : InputBuffer, OutputBuffer;
+import packetmaker.buffer : Buffer;
 import packetmaker.varint : isVar;
 
 // attributes
@@ -47,7 +47,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	import std.traits : isNested;
 
-	import packetmaker.buffer : InputBuffer, OutputBuffer;
+	import packetmaker.buffer : Buffer;
 	import packetmaker.maker : EndianType, write, writeImpl, writeMembers, read, readImpl, readMembers;
 	import packetmaker.packet : Packet;
 
@@ -61,23 +61,23 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 		static assert(__traits(hasMember, typeof(this), "__PacketId") && __traits(hasMember, typeof(this), "__packetIdEndianness"));
 
-		override void encodeId(InputBuffer buffer) @nogc {
+		override void encodeId(Buffer buffer) @nogc {
 			static if(isVar!__PacketId) writeImpl!(EndianType.var, __PacketId.Base)(buffer, ID);
 			else writeImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
 		}
 
-		override void decodeId(OutputBuffer buffer) {
+		override void decodeId(Buffer buffer) {
 			static if(isVar!__PacketId) readImpl!(EndianType.var, __PacketId.Base)(buffer);
 			else readImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer);
 		}
 
 	} else static if(__nested) {
 
-		override void encodeId(InputBuffer buffer) @nogc {
+		override void encodeId(Buffer buffer) @nogc {
 			__traits(parent, typeof(this)).encodeId(buffer);
 		}
 
-		override void decodeId(OutputBuffer buffer) {
+		override void decodeId(Buffer buffer) {
 			__traits(parent, typeof(this)).decodeId(buffer);
 		}
 
@@ -85,7 +85,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	static if(__packet) {
 
-		override void encodeBody(InputBuffer buffer) @nogc {
+		override void encodeBody(Buffer buffer) @nogc {
 			static if(__nested) {
 				__traits(parent, typeof(this)).encodeBody(buffer);
 			}
@@ -93,18 +93,18 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
-		override void decodeBody(OutputBuffer buffer) {
+		override void decodeBody(Buffer buffer) {
 			super.decodeBody(buffer);
 			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
 	} else {
 
-		void encodeBody(InputBuffer buffer) @nogc {
+		void encodeBody(Buffer buffer) @nogc {
 			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
-		void decodeBody(OutputBuffer buffer) {
+		void decodeBody(Buffer buffer) {
 			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
@@ -144,11 +144,11 @@ mixin template Make() {
 
 alias write(EndianType endianness, OL, EndianType ole, T) = write!(endianness, OL, ole, OL, ole, T);
 
-void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(InputBuffer buffer, T data) @nogc {
+void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer, T data) @nogc {
 	static if(isArray!T) {
 		static if(isDynamicArray!T) writeLength!(cle, CL)(buffer, data.length);
 		static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
-			buffer.writeBytes(cast(ubyte[])data);
+			buffer.write(data);
 		} else {
 			foreach(element ; data) {
 				write!(endianness, OL, ole, typeof(element))(buffer, element);
@@ -173,19 +173,19 @@ void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Inp
 	}
 }
 
-void writeLength(EndianType endianness, L)(InputBuffer buffer, size_t length) @nogc {
+void writeLength(EndianType endianness, L)(Buffer buffer, size_t length) @nogc {
 	static if(L.sizeof < size_t.sizeof) writeImpl!(endianness, L)(buffer, cast(L)length);
 	else writeImpl!(endianness, L)(buffer, length);
 }
 
-void writeImpl(EndianType endianness, T)(InputBuffer buffer, T value) @nogc {
+void writeImpl(EndianType endianness, T)(Buffer buffer, T value) @nogc {
 	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) buffer.writeVar!T(value);
 	else static if(endianness == EndianType.bigEndian) buffer.write!(Endian.bigEndian, T)(value);
 	else static if(endianness == EndianType.littleEndian) buffer.write!(Endian.littleEndian, T)(value);
 	else static assert(0, "Cannot encode " ~ T.stringof);
 }
 
-void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buffer, T __container) @nogc {
+void writeMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) @nogc {
 	foreach(member ; Members!(T, DecodeOnly)) {
 		mixin("alias M = typeof(__container." ~ member ~ ");");
 		mixin({
@@ -198,7 +198,7 @@ void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buff
 				immutable e = "L, le, L, le";
 			}
 			
-			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__buffer.writeBytes(__container." ~ member ~ ");";
+			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__buffer.write(__container." ~ member ~ ");";
 			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "packetmaker.maker.write!(EndianType.var, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
 			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "packetmaker.maker.write!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
 			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "packetmaker.maker.write!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
@@ -213,14 +213,15 @@ void writeMembers(EndianType endianness, L, EndianType le, T)(InputBuffer __buff
 
 alias read(EndianType endianness, OL, EndianType ole, T) = read!(endianness, OL, ole, OL, ole, T);
 
-T read(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(OutputBuffer buffer) {
+T read(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer) {
 	static if(isArray!T) {
 		T ret;
 		static if(isDynamicArray!T) {
 			immutable length = readLength!(cle, CL)(buffer);
 			static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
-				ret = cast(T)buffer.readBytes(length);
+				ret = buffer.read!T(length).dup;
 			} else {
+				//TODO use built-in templates
 				foreach(size_t i ; 0..length) {
 					ret ~= read!(endianness, OL, ole, ForeachType!T)(buffer);
 				}
@@ -253,19 +254,19 @@ T read(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(OutputB
 	}
 }
 
-size_t readLength(EndianType endianness, L)(OutputBuffer buffer) {
+size_t readLength(EndianType endianness, L)(Buffer buffer) {
 	static if(size_t.sizeof < L.sizeof) return cast(size_t)readImpl!(endianness, L)(buffer);
 	else return readImpl!(endianness, L)(buffer);
 }
 
-T readImpl(EndianType endianness, T)(OutputBuffer buffer) {
+T readImpl(EndianType endianness, T)(Buffer buffer) {
 	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) return buffer.readVar!T();
 	else static if(endianness == EndianType.bigEndian) return buffer.read!(Endian.bigEndian, T)();
 	else static if(endianness == EndianType.littleEndian) return buffer.read!(Endian.littleEndian, T)();
 	else static assert(0, "Cannot decode " ~ T.stringof);
 }
 
-T readMembers(EndianType endianness, L, EndianType le, T)(OutputBuffer __buffer, T __container) {
+T readMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) {
 	foreach(member ; Members!(T, EncodeOnly)) {
 		mixin("alias M = typeof(__container." ~ member ~ ");");
 		mixin({
@@ -278,7 +279,7 @@ T readMembers(EndianType endianness, L, EndianType le, T)(OutputBuffer __buffer,
 				immutable e = "L, le, L, le";
 			}
 
-			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.readBytes(__buffer.data.length-__buffer.index);";
+			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.read!(ubyte[])(__buffer.capacity-__buffer.index).dup;";
 			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.var, " ~ e ~ ", M)(__buffer);";
 			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer);";
 			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer);";
@@ -487,12 +488,14 @@ unittest {
 
 	static struct F {
 
-		void encodeBody(InputBuffer buffer) @nogc {
-			buffer.writeBytes(3, 3, 3);
+		static const ubyte[] bytes = [3, 3, 3];
+
+		void encodeBody(Buffer buffer) @nogc {
+			buffer.write(bytes);
 		}
 
-		void decodeBody(OutputBuffer buffer) @nogc {
-			buffer.readBytes(3);
+		void decodeBody(Buffer buffer) @nogc {
+			buffer.read!(ubyte[])(3);
 		}
 
 	}
@@ -638,9 +641,9 @@ unittest {
 	n.i = 12;
 	assert(n.autoEncode() == [0, 0, 0, 12]);
 
-	auto buffer = new InputBuffer();
+	auto buffer = new Buffer(32);
 	m.encodeBody(buffer);
-	assert(buffer.data == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
+	assert(buffer.data!ubyte == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
 
 	// structs
 
@@ -656,7 +659,7 @@ unittest {
 	auto o = O(1, 2, [3]);
 	buffer.reset();
 	o.encodeBody(buffer);
-	assert(buffer.data == [1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 3]);
+	assert(buffer.data!ubyte == [1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 3]);
 
 	struct P {
 
@@ -677,7 +680,7 @@ unittest {
 	auto q = P(12).Q([13]); // structs cannot be nested, because the base struct does not extend packet
 	buffer.reset();
 	q.encodeBody(buffer);
-	assert(buffer.data == [1, 13]);
+	assert(buffer.data!ubyte == [1, 13]);
 	
 	// issue #1
 

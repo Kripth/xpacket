@@ -3,7 +3,7 @@
 import std.system : Endian;
 import std.traits : isIntegral;
 
-import packetmaker.buffer : InputBuffer, OutputBuffer;
+import packetmaker.buffer : Buffer;
 import packetmaker.memory : alloc, free;
 import packetmaker.varint : isVar;
 
@@ -11,47 +11,43 @@ import std.stdio : writeln;
 
 class Packet {
 
-	void encode(InputBuffer buffer) @nogc {
+	void encode(Buffer buffer) @nogc {
 		encodeId(buffer);
 		encodeBody(buffer);
 	}
 
-	void encodeId(InputBuffer buffer) @nogc {}
+	void encodeId(Buffer buffer) @nogc {}
 
-	void encodeBody(InputBuffer buffer) @nogc {}
+	void encodeBody(Buffer buffer) @nogc {}
 
 	ubyte[] autoEncode() {
-		InputBuffer buffer = createInputBuffer();
+		Buffer buffer = createInputBuffer();
 		scope(exit) free(buffer);
 		encode(buffer);
-		return buffer.data.dup; // move to GC
+		return buffer.data!ubyte.dup; // move to GC
 	}
 
-	InputBuffer createInputBuffer() @nogc {
-		return alloc!InputBuffer();
+	Buffer createInputBuffer() @nogc {
+		return alloc!Buffer(64);
 	}
 
-	deprecated("Use autoDecode instead") void decode(ubyte[] data) {
-		autoDecode(data);
-	}
-
-	void decode(OutputBuffer buffer) {
+	void decode(Buffer buffer) {
 		decodeId(buffer);
 		decodeBody(buffer);
 	}
 
-	void decodeId(OutputBuffer buffer) {}
+	void decodeId(Buffer buffer) {}
 
-	void decodeBody(OutputBuffer buffer) {}
+	void decodeBody(Buffer buffer) {}
 
 	void autoDecode(ubyte[] data) {
-		OutputBuffer buffer = createOutputBuffer(data);
+		Buffer buffer = createOutputBuffer(data);
 		scope(exit) free(buffer);
 		decode(buffer);
 	}
 
-	OutputBuffer createOutputBuffer(ubyte[] data) @nogc {
-		return alloc!OutputBuffer(data);
+	Buffer createOutputBuffer(ubyte[] data) @nogc {
+		return alloc!Buffer(data);
 	}
 
 }
