@@ -3,13 +3,15 @@ module packetmaker.buffer;
 import std.bitmanip : swapEndian;
 import std.string : toUpper;
 import std.system : Endian, endian;
-import std.traits : isArray, ForeachType, isBoolean, isIntegral, isFloatingPoint, isSomeChar, Unqual;
+import std.traits : isArray, isBoolean, isIntegral, isFloatingPoint, isSomeChar, Unqual;
 
 import packetmaker.memory : malloc, realloc, _free = free;
 import packetmaker.varint : Var;
 
 //TODO remove
 import std.stdio : writeln;
+
+alias ForeachType(T) = typeof(T.init[0]);
 
 private enum canSwapEndianness(T) = isBoolean!T || isIntegral!T || isFloatingPoint!T || isSomeChar!T || (is(T == struct) && canSwapEndiannessImpl!T);
 
@@ -115,6 +117,24 @@ unittest {
 
 	assert(swapper.value == Test(3 << 24, 2 << 24, 1 << 24));
 
+}
+
+/**
+ * Exception thrown when the buffer cannot read the requested
+ * data.
+ */
+class BufferOverflowException : Exception {
+
+	this() {
+		super("The buffer cannot read the requested data");
+	}
+
+}
+
+private BufferOverflowException __ex;
+
+static this() {
+	__ex = new BufferOverflowException();
 }
 
 /**
@@ -282,7 +302,7 @@ class Buffer {
 	/**
 	 * Writes an array using the system's endianness.
 	 */
-	void write(T)(T value) nothrow @nogc if(isArray!T && canSwapEndianness!(ForeachType!T)) {
+	void write(T)(in T value) nothrow @nogc if(isArray!T && (is(ForeachType!T : void) || canSwapEndianness!(ForeachType!T))) {
 		this.writeData(value);
 	}
 
@@ -346,17 +366,44 @@ class Buffer {
 	// read
 	// ----
 
-	void[] readData(size_t size) pure @safe @nogc {
-		//TODO check length
-		assert(_index + size <= _length);
+	/**
+	 * Indicates whether an array of length `size` can be
+	 * readed without any exceptions thrown.
+	 */
+	bool canRead(size_t size) pure nothrow @safe @nogc {
+		return _index + size <= _length;
+	}
+
+	///
+	unittest {
+
+		Buffer buffer = new Buffer(cast(ubyte[])[1, 2, 3]);
+		assert(buffer.canRead(2));
+		assert(buffer.canRead(3));
+		assert(!buffer.canRead(4));
+
+	}
+
+	void[] readData(size_t size) @safe @nogc {
+		if(!this.canRead(size)) throw __ex;
 		_index += size;
 		return _data[_index-size.._index];
+	}
+
+	unittest {
+
+		Buffer buffer = new Buffer([1]);
+		assert(buffer.read!int() == 1);
+		try {
+			buffer.read!int(); assert(0);
+		} catch(BufferOverflowException) {}
+
 	}
 
 	/**
 	 * Reads a value using the system's endianness.
 	 */
-	T read(T)() pure @trusted @nogc if(canSwapEndianness!T) {
+	T read(T)() @trusted @nogc if(canSwapEndianness!T) {
 		EndianSwapper!T swapper;
 		swapper.data = this.readData(T.sizeof);
 		return swapper.value;
@@ -374,7 +421,7 @@ class Buffer {
 	/**
 	 * Reads an array.
 	 */
-	T read(T)(size_t size) pure @trusted @nogc if(isArray!T && ForeachType!T.sizeof == 1) {
+	T read(T)(size_t size) @trusted @nogc if(isArray!T && ForeachType!T.sizeof == 1) {
 		return cast(T)this.readData(size);
 	}
 
@@ -390,7 +437,7 @@ class Buffer {
 	/**
 	 * Reads an array using the system's endianness.
 	 */
-	T read(T)(size_t size) pure @nogc if(isArray!T && ForeachType!T.sizeof > 1) {
+	T read(T)(size_t size) @nogc if(isArray!T && ForeachType!T.sizeof > 1) {
 		return cast(T)this.readData(size * ForeachType!T.sizeof);
 	}
 
@@ -416,7 +463,7 @@ class Buffer {
 	/**
 	 * Reads a type, specifying the endianness.
 	 */
-	T read(Endian endianness, T)() pure @trusted @nogc if(canSwapEndianness!T) {
+	T read(Endian endianness, T)() @trusted @nogc if(canSwapEndianness!T) {
 		static if(endianness == endian) return this.read!T();
 		else {
 			EndianSwapper!T swapper;

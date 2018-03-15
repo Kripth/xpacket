@@ -27,7 +27,7 @@ struct Var(T) if(isIntegral!T && T.sizeof > 1) {
 		}
 	}
 
-	static T decode(Buffer buffer) pure @safe @nogc {
+	static T decode(Buffer buffer) @safe @nogc {
 		static if(isUnsigned!T) {
 			T ret;
 			size_t shift;
