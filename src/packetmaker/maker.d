@@ -4,36 +4,10 @@ import std.string : capitalize;
 import std.system : Endian;
 import std.traits;
 
-import packetmaker.buffer : Buffer;
-import packetmaker.varint : isVar;
+import packetmaker.attributes;
 
-// attributes
-
-enum Exclude;
-
-enum EncodeOnly;
-
-enum DecodeOnly;
-
-struct Condition { string condition; }
-
-enum Var;
-
-enum BigEndian;
-
-enum LittleEndian;
-
-enum Bytes;
-
-struct LengthImpl { string type; int endianness; }
-
-LengthImpl EndianLength(T)(Endian endianness) if(isIntegral!T) { return LengthImpl(T.stringof, endianness); }
-
-template Length(T) if(isIntegral!T) { enum Length = LengthImpl(T.stringof, -1); }
-
-template Length(T) if(isVar!T) { enum Length = LengthImpl(T.Base.stringof, EndianType.var); }
-
-// maker
+import xbuffer.buffer : Buffer;
+import xbuffer.varint : isVar;
 
 enum EndianType {
 	
@@ -47,9 +21,10 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	import std.traits : isNested;
 
-	import packetmaker.buffer : Buffer;
 	import packetmaker.maker : EndianType, write, writeImpl, writeMembers, read, readImpl, readMembers;
 	import packetmaker.packet : Packet;
+	
+	import xbuffer.buffer : Buffer;
 
 	static assert(is(typeof(this) == class) || is(typeof(this) == struct));
 
@@ -105,7 +80,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 		}
 
 		void decodeBody(Buffer buffer) {
-			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, &this);
 		}
 
 	}
@@ -123,7 +98,8 @@ mixin template Make(Endian endianness, Length, Endian length_endianness) {
 mixin template Make(Endian endianness, Length) {
 
 	import packetmaker.maker : EndianType, Make;
-	import packetmaker.varint : isVar;
+
+	import xbuffer.varint : isVar;
 
 	static if(isVar!Length) mixin Make!(endianness, Length.Base, EndianType.var);
 	else mixin Make!(endianness, Length, cast(EndianType)endianness);
@@ -135,7 +111,8 @@ mixin template Make() {
 	//TODO check variables
 
 	import packetmaker.maker : EndianType, Make;
-	import packetmaker.varint : isVar;
+
+	import xbuffer.varint : isVar;
 
 	static if(isVar!__PacketLength) mixin Make!(__packetEndianness, __PacketLength.Base, EndianType.var);
 	else mixin Make!(__packetEndianness, __PacketLength, cast(EndianType)__packetLengthEndianness);
@@ -243,8 +220,10 @@ T read(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer 
 		else T ret;
 		static if(__traits(hasMember, T, "decodeBody")) {
 			ret.decodeBody(buffer);
+		} else static if(is(T == class)) {
+			readMembers!(endianness, OL, ole)(buffer, ret);
 		} else {
-			ret = readMembers!(endianness, OL, ole)(buffer, ret);
+			readMembers!(endianness, OL, ole)(buffer, &ret);
 		}
 		return ret;
 	} else static if(is(T : bool) || isIntegral!T || isFloatingPoint!T || isSomeChar!T) {
@@ -266,7 +245,9 @@ T readImpl(EndianType endianness, T)(Buffer buffer) {
 	else static assert(0, "Cannot decode " ~ T.stringof);
 }
 
-T readMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) {
+void readMembers(EndianType endianness, L, EndianType le, C)(Buffer __buffer, C __container) {
+	static if(isPointer!C) alias T = typeof(*__container);
+	else alias T = C;
 	foreach(member ; Members!(T, EncodeOnly)) {
 		mixin("alias M = typeof(__container." ~ member ~ ");");
 		mixin({
@@ -290,7 +271,6 @@ T readMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __c
 
 		}());
 	}
-	return __container;
 }
 
 template Members(T, alias Only) {
@@ -329,6 +309,8 @@ unittest {
 	import packetmaker.packet : PacketImpl;
 
 	alias Test = PacketImpl!(Endian.bigEndian, ubyte, ushort);
+
+	Buffer buffer = new Buffer(16);
 	
 	class A : Test {
 		
@@ -420,9 +402,13 @@ unittest {
 
 		@Bytes ubyte[] rest;
 
-		@property string prop() { return "test"; }
+		@property string prop() {
+			return "test";
+		}
 
-		@property string prop(string value) { return value; }
+		@property string prop(string value) {
+			return value;
+		}
 
 		mixin Make;
 
@@ -438,6 +424,7 @@ unittest {
 	c.lea = [1];
 	c.varr = [1];
 	c.rest = [5];
+	c.prop = c.prop;
 	assert(c.autoEncode() == [8, 1, 0, 0, 0, 0, 0, 0, 1, 99, 200, 1, 9, 0, 1, 1, 0, 0, 1, 2, 5]);
 
 	c.autoDecode([8, 1, 1, 0, 0, 0, 0, 1, 0, 0, 44, 0, 3, 0, 1, 1, 0, 0, 1, 14, 1, 2, 3]);
@@ -494,29 +481,31 @@ unittest {
 			buffer.write(bytes);
 		}
 
-		void decodeBody(Buffer buffer) @nogc {
+		void decodeBody(Buffer buffer) {
 			buffer.read!(ubyte[])(3);
 		}
 
 	}
 
-	class G : Test {
+	struct G {
 
 		ubyte a;
 		E[] b;
 		F c;
 
-		mixin Make;
+		mixin Make!(Endian.bigEndian, ushort);
 
 	}
 
-	auto g = new G();
+	auto g = G();
 	g.a = 44;
 	g.b ~= E(1, 2);
 	g.b ~= E(0, 0);
-	assert(g.autoEncode() == [44, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 3, 3, 3]);
+	g.encodeBody(buffer);
+	assert(buffer == cast(ubyte[])[44, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 3, 3, 3]);
 
-	g.autoDecode([12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3]);
+	buffer.data = cast(ubyte[])[12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3];
+	g.decodeBody(buffer);
 	assert(g.a == 12);
 	assert(g.b == [E(1, 5)]);
 
@@ -547,7 +536,7 @@ unittest {
 
 	// custom length
 
-	import packetmaker.varint : varuint, varulong;
+	import xbuffer.varint : varuint, varulong;
 
 	class J : Test {
 
@@ -641,7 +630,7 @@ unittest {
 	n.i = 12;
 	assert(n.autoEncode() == [0, 0, 0, 12]);
 
-	auto buffer = new Buffer(32);
+	buffer.reset();
 	m.encodeBody(buffer);
 	assert(buffer.data!ubyte == [0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
 

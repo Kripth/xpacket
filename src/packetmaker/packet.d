@@ -3,11 +3,9 @@
 import std.system : Endian;
 import std.traits : isIntegral;
 
-import packetmaker.buffer : Buffer;
-import packetmaker.memory : alloc, free;
-import packetmaker.varint : isVar;
-
-import std.stdio : writeln;
+import xbuffer.buffer : Buffer;
+import xbuffer.memory : alloc, free;
+import xbuffer.varint : isVar;
 
 class Packet {
 
