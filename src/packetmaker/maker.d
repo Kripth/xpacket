@@ -52,9 +52,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 			__traits(parent, typeof(this)).encodeId(buffer);
 		}
 
-		override void decodeId(Buffer buffer) {
-			__traits(parent, typeof(this)).decodeId(buffer);
-		}
+		// decodeId should not be called in nested types
 
 	}
 
