@@ -4,7 +4,7 @@ import std.system : Endian;
 import std.traits : isIntegral;
 
 import xbuffer.buffer : Buffer;
-import xbuffer.memory : alloc, free;
+import xbuffer.memory : xalloc, xfree;
 import xbuffer.varint : isVar;
 
 class Packet {
@@ -20,13 +20,13 @@ class Packet {
 
 	ubyte[] autoEncode() {
 		Buffer buffer = createInputBuffer();
-		scope(exit) free(buffer);
+		scope(exit) xfree(buffer);
 		encode(buffer);
 		return buffer.data!ubyte.dup; // move to GC
 	}
 
 	Buffer createInputBuffer() @nogc {
-		return alloc!Buffer(64);
+		return xalloc!Buffer(64);
 	}
 
 	void decode(Buffer buffer) {
@@ -40,12 +40,12 @@ class Packet {
 
 	void autoDecode(ubyte[] data) {
 		Buffer buffer = createOutputBuffer(data);
-		scope(exit) free(buffer);
+		scope(exit) xfree(buffer);
 		decode(buffer);
 	}
 
 	Buffer createOutputBuffer(ubyte[] data) @nogc {
-		return alloc!Buffer(data);
+		return xalloc!Buffer(data);
 	}
 
 }
