@@ -258,7 +258,7 @@ void readMembers(EndianType endianness, L, EndianType le, C)(Buffer __buffer, C 
 				immutable e = "L, le, L, le";
 			}
 
-			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.read!(ubyte[])(__buffer.capacity-__buffer.index).dup;";
+			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.read!(ubyte[])(__buffer.data.length).dup;";
 			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.var, " ~ e ~ ", M)(__buffer);";
 			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer);";
 			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer);";
