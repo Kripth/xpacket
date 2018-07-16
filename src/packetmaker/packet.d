@@ -9,14 +9,14 @@ import xbuffer.varint : isVar;
 
 class Packet {
 
-	void encode(Buffer buffer) @nogc {
+	void encode(Buffer buffer) {
 		encodeId(buffer);
 		encodeBody(buffer);
 	}
 
-	void encodeId(Buffer buffer) @nogc {}
+	void encodeId(Buffer buffer) {}
 
-	void encodeBody(Buffer buffer) @nogc {}
+	void encodeBody(Buffer buffer) {}
 
 	ubyte[] autoEncode() {
 		Buffer buffer = createInputBuffer();

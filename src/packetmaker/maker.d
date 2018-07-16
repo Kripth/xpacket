@@ -36,7 +36,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 		static assert(__traits(hasMember, typeof(this), "__PacketId") && __traits(hasMember, typeof(this), "__packetIdEndianness"));
 
-		override void encodeId(Buffer buffer) @nogc {
+		override void encodeId(Buffer buffer) {
 			static if(isVar!__PacketId) writeImpl!(EndianType.var, __PacketId.Base)(buffer, ID);
 			else writeImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
 		}
@@ -48,7 +48,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	} else static if(__nested) {
 
-		override void encodeId(Buffer buffer) @nogc {
+		override void encodeId(Buffer buffer) {
 			__traits(parent, typeof(this)).encodeId(buffer);
 		}
 
@@ -58,7 +58,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	static if(__packet) {
 
-		override void encodeBody(Buffer buffer) @nogc {
+		override void encodeBody(Buffer buffer) {
 			static if(__nested) {
 				__traits(parent, typeof(this)).encodeBody(buffer);
 			}
@@ -73,7 +73,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	} else {
 
-		void encodeBody(Buffer buffer) @nogc {
+		void encodeBody(Buffer buffer) {
 			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
@@ -119,7 +119,7 @@ mixin template Make() {
 
 alias write(EndianType endianness, OL, EndianType ole, T) = write!(endianness, OL, ole, OL, ole, T);
 
-void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer, T data) @nogc {
+void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer, T data) {
 	static if(isArray!T) {
 		static if(isDynamicArray!T) writeLength!(cle, CL)(buffer, data.length);
 		static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
@@ -148,22 +148,31 @@ void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buf
 	}
 }
 
-void writeLength(EndianType endianness, L)(Buffer buffer, size_t length) @nogc {
+void writeLength(EndianType endianness, L)(Buffer buffer, size_t length) {
 	static if(L.sizeof < size_t.sizeof) writeImpl!(endianness, L)(buffer, cast(L)length);
 	else writeImpl!(endianness, L)(buffer, length);
 }
 
-void writeImpl(EndianType endianness, T)(Buffer buffer, T value) @nogc {
+void writeImpl(EndianType endianness, T)(Buffer buffer, T value) {
 	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) buffer.writeVar!T(value);
 	else static if(endianness == EndianType.bigEndian) buffer.write!(Endian.bigEndian, T)(value);
 	else static if(endianness == EndianType.littleEndian) buffer.write!(Endian.littleEndian, T)(value);
 	else static assert(0, "Cannot encode " ~ T.stringof);
 }
 
-void writeMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) @nogc {
+void writeMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) {
 	foreach(member ; Members!(T, DecodeOnly)) {
+
 		mixin("alias M = typeof(__container." ~ member ~ ");");
-		mixin({
+		
+		static foreach(uda ; __traits(getAttributes, __traits(getMember, T, member))) {
+			static if(is(uda : Custom!C, C)) {
+				enum __custom = true;
+				uda.C.encode(mixin("__container." ~ member), __buffer);
+			}
+		}
+
+		static if(!is(typeof(__custom))) mixin({
 
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
@@ -183,6 +192,7 @@ void writeMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T
 			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
 
 		}());
+
 	}
 }
 
@@ -247,8 +257,17 @@ void readMembers(EndianType endianness, L, EndianType le, C)(Buffer __buffer, C 
 	static if(isPointer!C) alias T = typeof(*__container);
 	else alias T = C;
 	foreach(member ; Members!(T, EncodeOnly)) {
+
 		mixin("alias M = typeof(__container." ~ member ~ ");");
-		mixin({
+
+		static foreach(uda ; __traits(getAttributes, __traits(getMember, T, member))) {
+			static if(is(uda : Custom!C, C)) {
+				enum __custom = true;
+				mixin("__container." ~ member) = uda.C.decode(__buffer);
+			}
+		}
+		
+		static if(!is(typeof(__custom))) mixin({
 
 			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
 				import std.conv : to;
@@ -268,6 +287,7 @@ void readMembers(EndianType endianness, L, EndianType le, C)(Buffer __buffer, C 
 			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
 
 		}());
+
 	}
 }
 
@@ -685,5 +705,41 @@ unittest {
 
 	r.autoDecode([0, 3, 255, 255, 0, 0, 0, 1]);
 	assert(r.array == [-1, 0, 1]);
+
+	// custom attribute
+
+	import std.uuid : UUID;
+
+	struct CustomUUID {
+
+		public static void encode(UUID uuid, Buffer buffer) {
+			buffer.write(uuid.data);
+		}
+
+		public static UUID decode(Buffer buffer) {
+			ubyte[16] data = buffer.read!(ubyte[])(16);
+			return UUID(data);
+		}
+
+	}
+
+	class S : Base {
+
+		enum ubyte ID = 18;
+
+		@Custom!CustomUUID UUID uuid;
+
+		mixin Make;
+
+	}
+
+	ubyte[16] data = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0];
+
+	auto s = new S();
+	s.uuid = UUID(data);
+	assert(s.autoEncode() == [18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
+
+	a.autoDecode([18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
+	assert(s.uuid.data == data);
 	
 }

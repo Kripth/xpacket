@@ -2,7 +2,7 @@ module packetmaker;
 
 public import std.system : Endian;
 
-public import packetmaker.attributes : Exclude, EncodeOnly, DecodeOnly, Condition, BigEndian, LittleEndian, Var, Bytes, Length, EndianLength;
+public import packetmaker.attributes : Exclude, EncodeOnly, DecodeOnly, Condition, BigEndian, LittleEndian, Var, Bytes, Length, EndianLength, Custom;
 public import packetmaker.maker : Make;
 public import packetmaker.packet : Packet, PacketImpl;
 
