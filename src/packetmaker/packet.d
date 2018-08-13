@@ -38,13 +38,13 @@ class Packet {
 
 	void decodeBody(Buffer buffer) {}
 
-	void autoDecode(ubyte[] data) {
+	void autoDecode(in ubyte[] data) {
 		Buffer buffer = createOutputBuffer(data);
 		scope(exit) xfree(buffer);
 		decode(buffer);
 	}
 
-	Buffer createOutputBuffer(ubyte[] data) @nogc {
+	Buffer createOutputBuffer(in ubyte[] data) @nogc {
 		return xalloc!Buffer(data);
 	}
 
