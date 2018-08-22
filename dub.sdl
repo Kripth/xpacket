@@ -1,6 +1,6 @@
-name "packet-maker"
+name "xpacket"
 description "Packet encoder and decoder generator"
 authors "Kripth"
 license "MIT"
 targetType "library"
-dependency "xbuffer" version="~>1.0.0"
+dependency "xserial" version="~>0.1.0"

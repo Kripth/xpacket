@@ -4,27 +4,20 @@ import std.string : capitalize;
 import std.system : Endian;
 import std.traits;
 
-import packetmaker.attributes;
-
 import xbuffer.buffer : Buffer;
 import xbuffer.varint : isVar;
 
-enum EndianType {
-	
-	bigEndian = cast(int)Endian.bigEndian,
-	littleEndian = cast(int)Endian.littleEndian,
-	var,
-	
-}
+import xserial.serial : EndianType;
 
 mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	import std.traits : isNested;
 
-	import packetmaker.maker : EndianType, write, writeImpl, writeMembers, read, readImpl, readMembers;
 	import packetmaker.packet : Packet;
 	
 	import xbuffer.buffer : Buffer;
+
+	import xserial.serial : EndianType, serializeNumber, serializeMembers, deserializeNumber, deserializeMembers;
 
 	static assert(is(typeof(this) == class) || is(typeof(this) == struct));
 
@@ -37,13 +30,13 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 		static assert(__traits(hasMember, typeof(this), "__PacketId") && __traits(hasMember, typeof(this), "__packetIdEndianness"));
 
 		override void encodeId(Buffer buffer) {
-			static if(isVar!__PacketId) writeImpl!(EndianType.var, __PacketId.Base)(buffer, ID);
-			else writeImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
+			static if(isVar!__PacketId) serializeNumber!(EndianType.var, __PacketId.Base)(buffer, ID);
+			else serializeNumber!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer, ID);
 		}
 
 		override void decodeId(Buffer buffer) {
-			static if(isVar!__PacketId) readImpl!(EndianType.var, __PacketId.Base)(buffer);
-			else readImpl!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer);
+			static if(isVar!__PacketId) deserializeNumber!(EndianType.var, __PacketId.Base)(buffer);
+			else deserializeNumber!(cast(EndianType)__packetIdEndianness, __PacketId)(buffer);
 		}
 
 	} else static if(__nested) {
@@ -63,22 +56,22 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 				__traits(parent, typeof(this)).encodeBody(buffer);
 			}
 			super.encodeBody(buffer);
-			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+			serializeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
 		override void decodeBody(Buffer buffer) {
 			super.decodeBody(buffer);
-			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+			deserializeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
 	} else {
 
 		void encodeBody(Buffer buffer) {
-			writeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
+			serializeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, this);
 		}
 
 		void decodeBody(Buffer buffer) {
-			readMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, &this);
+			deserializeMembers!(cast(EndianType)endianness, L, length_endianness)(buffer, &this);
 		}
 
 	}
@@ -87,7 +80,9 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 mixin template Make(Endian endianness, Length, Endian length_endianness) {
 
-	import packetmaker.maker : EndianType, Make;
+	import packetmaker.maker : Make;
+
+	import xserial.serial : EndianType;
 
 	mixin Make!(endianness, Length, cast(EndianType)length_endianness);
 
@@ -95,9 +90,11 @@ mixin template Make(Endian endianness, Length, Endian length_endianness) {
 
 mixin template Make(Endian endianness, Length) {
 
-	import packetmaker.maker : EndianType, Make;
+	import packetmaker.maker : Make;
 
 	import xbuffer.varint : isVar;
+	
+	import xserial.serial : EndianType;
 
 	static if(isVar!Length) mixin Make!(endianness, Length.Base, EndianType.var);
 	else mixin Make!(endianness, Length, cast(EndianType)endianness);
@@ -108,215 +105,14 @@ mixin template Make() {
 
 	//TODO check variables
 
-	import packetmaker.maker : EndianType, Make;
+	import packetmaker.maker : Make;
 
 	import xbuffer.varint : isVar;
+	
+	import xserial.serial : EndianType;
 
 	static if(isVar!__PacketLength) mixin Make!(__packetEndianness, __PacketLength.Base, EndianType.var);
 	else mixin Make!(__packetEndianness, __PacketLength, cast(EndianType)__packetLengthEndianness);
-
-}
-
-alias write(EndianType endianness, OL, EndianType ole, T) = write!(endianness, OL, ole, OL, ole, T);
-
-void write(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer, T data) {
-	static if(isArray!T) {
-		static if(isDynamicArray!T) writeLength!(cle, CL)(buffer, data.length);
-		static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
-			buffer.write(data);
-		} else {
-			foreach(element ; data) {
-				write!(endianness, OL, ole, typeof(element))(buffer, element);
-			}
-		}
-	} else static if(isAssociativeArray!T) {
-		writeLength!(cle, CL)(buffer, data.length);
-		foreach(key, value; data) {
-			write!(endianness, OL, ole, typeof(key))(buffer, key);
-			write!(endianness, OL, ole, typeof(value))(buffer, value);
-		}
-	} else static if(is(T == class) || is(T == struct)) {
-		static if(__traits(hasMember, T, "encodeBody")) {
-			data.encodeBody(buffer);
-		} else {
-			writeMembers!(endianness, OL, ole)(buffer, data);
-		}
-	} else static if(is(T : bool) || isIntegral!T || isFloatingPoint!T || isSomeChar!T) {
-		writeImpl!endianness(buffer, data);
-	} else {
-		static assert(0, "Cannot encode " ~ T.stringof);
-	}
-}
-
-void writeLength(EndianType endianness, L)(Buffer buffer, size_t length) {
-	static if(L.sizeof < size_t.sizeof) writeImpl!(endianness, L)(buffer, cast(L)length);
-	else writeImpl!(endianness, L)(buffer, length);
-}
-
-void writeImpl(EndianType endianness, T)(Buffer buffer, T value) {
-	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) buffer.writeVar!T(value);
-	else static if(endianness == EndianType.bigEndian) buffer.write!(Endian.bigEndian, T)(value);
-	else static if(endianness == EndianType.littleEndian) buffer.write!(Endian.littleEndian, T)(value);
-	else static assert(0, "Cannot encode " ~ T.stringof);
-}
-
-void writeMembers(EndianType endianness, L, EndianType le, T)(Buffer __buffer, T __container) {
-	foreach(member ; Members!(T, DecodeOnly)) {
-
-		mixin("alias M = typeof(__container." ~ member ~ ");");
-		
-		static foreach(uda ; __traits(getAttributes, __traits(getMember, T, member))) {
-			static if(is(uda : Custom!C, C)) {
-				enum __custom = true;
-				uda.C.encode(mixin("__container." ~ member), __buffer);
-			}
-		}
-
-		static if(!is(typeof(__custom))) mixin({
-
-			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
-				import std.conv : to;
-				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "endianness" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
-			} else {
-				immutable e = "L, le, L, le";
-			}
-			
-			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__buffer.write(__container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "packetmaker.maker.write!(EndianType.var, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "packetmaker.maker.write!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "packetmaker.maker.write!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			else immutable ret = "packetmaker.maker.write!(endianness, " ~ e ~ ", M)(__buffer, __container." ~ member ~ ");";
-			
-			static if(!hasUDA!(__traits(getMember, T, member), Condition)) return ret;
-			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
-
-		}());
-
-	}
-}
-
-alias read(EndianType endianness, OL, EndianType ole, T) = read!(endianness, OL, ole, OL, ole, T);
-
-T read(EndianType endianness, OL, EndianType ole, CL, EndianType cle, T)(Buffer buffer) {
-	static if(isArray!T) {
-		T ret;
-		static if(isDynamicArray!T) {
-			immutable length = readLength!(cle, CL)(buffer);
-			static if(ForeachType!T.sizeof == 1 && isBuiltinType!(ForeachType!T)) {
-				ret = buffer.read!T(length).dup;
-			} else {
-				//TODO use built-in templates
-				foreach(size_t i ; 0..length) {
-					ret ~= read!(endianness, OL, ole, ForeachType!T)(buffer);
-				}
-			}
-		} else {
-			foreach(size_t i ; 0..ret.length) {
-				ret[i] = read!(endianness, OL, ole, ForeachType!T)(buffer);
-			}
-		}
-		return ret;
-	} else static if(isAssociativeArray!T) {
-		T ret;
-		foreach(i ; 0..readLength!(cle, CL)(buffer)) {
-			ret[read!(endianness, OL, ole, KeyType!T)(buffer)] = read!(endianness, OL, ole, ValueType!T)(buffer);
-		}
-		return ret;
-	} else static if(is(T == class) || is(T == struct)) {
-		static if(is(T == class)) T ret = new T();
-		else T ret;
-		static if(__traits(hasMember, T, "decodeBody")) {
-			ret.decodeBody(buffer);
-		} else static if(is(T == class)) {
-			readMembers!(endianness, OL, ole)(buffer, ret);
-		} else {
-			readMembers!(endianness, OL, ole)(buffer, &ret);
-		}
-		return ret;
-	} else static if(is(T : bool) || isIntegral!T || isFloatingPoint!T || isSomeChar!T) {
-		return readImpl!(endianness, T)(buffer);
-	} else {
-		static assert(0, "Cannot decode " ~ T.stringof);
-	}
-}
-
-size_t readLength(EndianType endianness, L)(Buffer buffer) {
-	static if(size_t.sizeof < L.sizeof) return cast(size_t)readImpl!(endianness, L)(buffer);
-	else return readImpl!(endianness, L)(buffer);
-}
-
-T readImpl(EndianType endianness, T)(Buffer buffer) {
-	static if(endianness == EndianType.var && isIntegral!T && T.sizeof > 1) return buffer.readVar!T();
-	else static if(endianness == EndianType.bigEndian) return buffer.read!(Endian.bigEndian, T)();
-	else static if(endianness == EndianType.littleEndian) return buffer.read!(Endian.littleEndian, T)();
-	else static assert(0, "Cannot decode " ~ T.stringof);
-}
-
-void readMembers(EndianType endianness, L, EndianType le, C)(Buffer __buffer, C __container) {
-	static if(isPointer!C) alias T = typeof(*__container);
-	else alias T = C;
-	foreach(member ; Members!(T, EncodeOnly)) {
-
-		mixin("alias M = typeof(__container." ~ member ~ ");");
-
-		static foreach(uda ; __traits(getAttributes, __traits(getMember, T, member))) {
-			static if(is(uda : Custom!C, C)) {
-				enum __custom = true;
-				mixin("__container." ~ member) = uda.C.decode(__buffer);
-			}
-		}
-		
-		static if(!is(typeof(__custom))) mixin({
-
-			static if(hasUDA!(__traits(getMember, T, member), LengthImpl)) {
-				import std.conv : to;
-				auto length = getUDAs!(__traits(getMember, T, member), LengthImpl)[0];
-				immutable e = "L, le, " ~ length.type ~ ", " ~ (length.endianness == -1 ? "endianness" : "EndianType." ~ (cast(EndianType)length.endianness).to!string);
-			} else {
-				immutable e = "L, le, L, le";
-			}
-
-			static if(hasUDA!(__traits(getMember, T, member), Bytes)) immutable ret = "__container." ~ member ~ "=__buffer.read!(ubyte[])(__buffer.data.length).dup;";
-			else static if(hasUDA!(__traits(getMember, T, member), Var)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.var, " ~ e ~ ", M)(__buffer);";
-			else static if(hasUDA!(__traits(getMember, T, member), BigEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.bigEndian, " ~ e ~ ", M)(__buffer);";
-			else static if(hasUDA!(__traits(getMember, T, member), LittleEndian)) immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(EndianType.littleEndian, " ~ e ~ ", M)(__buffer);";
-			else immutable ret = "__container." ~ member ~ "=packetmaker.maker.read!(endianness, " ~ e ~ ", M)(__buffer);";
-			
-			static if(!hasUDA!(__traits(getMember, T, member), Condition)) return ret;
-			else return "with(__container){if(" ~ getUDAs!(__traits(getMember, T, member), Condition)[0].condition ~ "){" ~ ret ~ "}}";
-
-		}());
-
-	}
-}
-
-template Members(T, alias Only) {
-
-	import std.typetuple : TypeTuple;
-
-	mixin({
-
-		string ret = "alias Members = TypeTuple!(";
-		foreach(member ; __traits(derivedMembers, T)) {
-			static if(is(typeof(mixin("T." ~ member)))) {
-				mixin("alias M = typeof(T." ~ member ~ ");");
-				static if(
-					isType!M &&
-					!isCallable!M &&
-					!__traits(compiles, { mixin("auto test=T." ~ member ~ ";"); }) &&			// static members
-					!__traits(compiles, { mixin("auto test=T.init." ~ member ~ "();"); }) &&	// properties
-					!hasUDA!(__traits(getMember, T, member), Exclude) &&
-					!hasUDA!(__traits(getMember, T, member), Only)
-				) {
-					ret ~= `"` ~ member ~ `",`;
-
-				}
-			}
-		}
-		return ret ~ ");";
-		
-	}());
 
 }
 
@@ -325,6 +121,8 @@ unittest {
 	import std.stdio : writeln;
 
 	import packetmaker.packet : PacketImpl;
+
+	import xserial.attribute;
 
 	alias Test = PacketImpl!(Endian.bigEndian, ubyte, ushort);
 
@@ -418,7 +216,7 @@ unittest {
 
 		@Var int[] varr;
 
-		@Bytes ubyte[] rest;
+		@NoLength ubyte[] rest;
 
 		@property string prop() {
 			return "test";
@@ -491,7 +289,7 @@ unittest {
 
 	}
 
-	static struct F {
+	/+static struct F {
 
 		static const ubyte[] bytes = [3, 3, 3];
 
@@ -525,7 +323,7 @@ unittest {
 	buffer.data = cast(ubyte[])[12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3];
 	g.decodeBody(buffer);
 	assert(g.a == 12);
-	assert(g.b == [E(1, 5)]);
+	assert(g.b == [E(1, 5)]);+/
 
 	// inheritance
 
@@ -712,11 +510,11 @@ unittest {
 
 	struct CustomUUID {
 
-		public static void encode(UUID uuid, Buffer buffer) {
+		public static void serialize(UUID uuid, Buffer buffer) {
 			buffer.write(uuid.data);
 		}
 
-		public static UUID decode(Buffer buffer) {
+		public static UUID deserialize(Buffer buffer) {
 			ubyte[16] data = buffer.read!(ubyte[])(16);
 			return UUID(data);
 		}
