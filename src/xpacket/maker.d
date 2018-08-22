@@ -1,4 +1,4 @@
-﻿module packetmaker.maker;
+﻿module xpacket.maker;
 
 import std.string : capitalize;
 import std.system : Endian;
@@ -13,7 +13,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 	import std.traits : isNested;
 
-	import packetmaker.packet : Packet;
+	import xpacket.packet : Packet;
 	
 	import xbuffer.buffer : Buffer;
 
@@ -80,7 +80,7 @@ mixin template Make(Endian endianness, L, EndianType length_endianness) {
 
 mixin template Make(Endian endianness, Length, Endian length_endianness) {
 
-	import packetmaker.maker : Make;
+	import xpacket.maker : Make;
 
 	import xserial.serial : EndianType;
 
@@ -90,7 +90,7 @@ mixin template Make(Endian endianness, Length, Endian length_endianness) {
 
 mixin template Make(Endian endianness, Length) {
 
-	import packetmaker.maker : Make;
+	import xpacket.maker : Make;
 
 	import xbuffer.varint : isVar;
 	
@@ -105,7 +105,7 @@ mixin template Make() {
 
 	//TODO check variables
 
-	import packetmaker.maker : Make;
+	import xpacket.maker : Make;
 
 	import xbuffer.varint : isVar;
 	
@@ -120,7 +120,7 @@ unittest {
 
 	import std.stdio : writeln;
 
-	import packetmaker.packet : PacketImpl;
+	import xpacket.packet : PacketImpl;
 
 	import xserial.attribute;
 

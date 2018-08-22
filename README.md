@@ -1,11 +1,11 @@
 Create packet encoders and decoders without writing any encode or decode method.
 
-[![DUB Package](https://img.shields.io/dub/v/packet-maker.svg)](https://code.dlang.org/packages/packet-maker)
-[![codecov](https://codecov.io/gh/Kripth/packet-maker/branch/master/graph/badge.svg)](https://codecov.io/gh/Kripth/packet-maker)
-[![Build Status](https://travis-ci.org/Kripth/packet-maker.svg?branch=master)](https://travis-ci.org/Kripth/packet-maker)
+[![DUB Package](https://img.shields.io/dub/v/xpacket.svg)](https://code.dlang.org/packages/xpacket)
+[![codecov](https://codecov.io/gh/Kripth/xpacket/branch/master/graph/badge.svg)](https://codecov.io/gh/Kripth/xpacket)
+[![Build Status](https://travis-ci.org/Kripth/xpacket.svg?branch=master)](https://travis-ci.org/Kripth/xpacket)
 
 ```d
-import packetmaker;
+import xpacket;
 
 class MyPacket : PacketImpl!(Endian.bigEndian, ubyte, varuint) {
 

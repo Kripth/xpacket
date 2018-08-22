@@ -1,4 +1,4 @@
-﻿module packetmaker.packet;
+﻿module xpacket.packet;
 
 import std.system : Endian;
 import std.traits : isIntegral;
