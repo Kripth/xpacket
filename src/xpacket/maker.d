@@ -142,9 +142,9 @@ unittest {
 	auto a = new A();
 	a.a = 12;
 	a.b = 2;
-	assert(a.autoEncode() == [44, 0, 0, 0, 12, 0, 2]);
+	assert(a.encode() == [44, 0, 0, 0, 12, 0, 2]);
 
-	a.autoDecode([44, 0, 0, 0, 44, 0, 44]);
+	a.decode([44, 0, 0, 0, 44, 0, 44]);
 	assert(a.a == 44);
 	assert(a.b == 44);
 
@@ -170,9 +170,9 @@ unittest {
 	b.str = "hello";
 	b.bools = [true, false].idup;
 	b.aa[44] = 1;
-	assert(b.autoEncode() == [45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, true, false, 0, 1, 44, 1]);
+	assert(b.encode() == [45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, true, false, 0, 1, 44, 1]);
 
-	b.autoDecode([45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, false, true, 0, 2, 0, 0, 1, 1]);
+	b.decode([45, 0, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 5, 'h', 'e', 'l', 'l', 'o', 0, 2, false, true, 0, 2, 0, 0, 1, 1]);
 	assert(b.bytes == [1, 2, 3]);
 	assert(b.ints == [0, 256]);
 	assert(b.str == "hello");
@@ -190,7 +190,7 @@ unittest {
 
 	auto b2 = new B2();
 	b2.utf16 = "test"w;
-	assert(b2.autoEncode() == [0, 4, 0, 't', 0, 'e', 0, 's', 0, 't']);
+	assert(b2.encode() == [0, 4, 0, 't', 0, 'e', 0, 's', 0, 't']);
 
 	// attributes
 
@@ -241,9 +241,9 @@ unittest {
 	c.varr = [1];
 	c.rest = [5];
 	c.prop = c.prop;
-	assert(c.autoEncode() == [8, 1, 0, 0, 0, 0, 0, 0, 1, 99, 200, 1, 9, 0, 1, 1, 0, 0, 1, 2, 5]);
+	assert(c.encode() == [8, 1, 0, 0, 0, 0, 0, 0, 1, 99, 200, 1, 9, 0, 1, 1, 0, 0, 1, 2, 5]);
 
-	c.autoDecode([8, 1, 1, 0, 0, 0, 0, 1, 0, 0, 44, 0, 3, 0, 1, 1, 0, 0, 1, 14, 1, 2, 3]);
+	c.decode([8, 1, 1, 0, 0, 0, 0, 1, 0, 0, 44, 0, 3, 0, 1, 1, 0, 0, 1, 14, 1, 2, 3]);
 	assert(c.le == 257);
 	assert(c.be == 256);
 	assert(c.enc == 99); // as previously assigned
@@ -269,14 +269,14 @@ unittest {
 	auto d = new D();
 	d.a = 11;
 	d.b = 12;
-	assert(d.autoEncode() == [11]); // no id!
+	assert(d.encode() == [11]); // no id!
 	d.a = 12;
-	assert(d.autoEncode() == [12, 12]);
+	assert(d.encode() == [12, 12]);
 
-	d.autoDecode([100, 100]);
+	d.decode([100, 100]);
 	assert(d.a == 100);
 	assert(d.b == 12); // old one
-	d.autoDecode([12, 100]);
+	d.decode([12, 100]);
 	assert(d.a == 12);
 	assert(d.b == 100);
 
@@ -348,7 +348,7 @@ unittest {
 	auto i = new I();
 	i.a = 1;
 	i.b = 2;
-	assert(i.autoEncode() == [1, 0, 1, 2]);
+	assert(i.encode() == [1, 0, 1, 2]);
 
 	// custom length
 
@@ -370,9 +370,9 @@ unittest {
 	j.b = "test";
 	j.c = [50];
 	j.d = [1, 2, 3];
-	assert(j.autoEncode() == [3, 1, 2, 3, 4, 't', 'e', 's', 't', 1, 0, 50, 3, 2, 4, 6]);
+	assert(j.encode() == [3, 1, 2, 3, 4, 't', 'e', 's', 't', 1, 0, 50, 3, 2, 4, 6]);
 
-	j.autoDecode([2, 1, 2, 5, 'h', 'e', 'l', 'l', 'o', 5, 0, 33, 33, 33, 33, 33, 1, 1]);
+	j.decode([2, 1, 2, 5, 'h', 'e', 'l', 'l', 'o', 5, 0, 33, 33, 33, 33, 33, 1, 1]);
 	assert(j.a == [1, 2]);
 	assert(j.b == "hello");
 	assert(j.c == [33, 33, 33, 33, 33]);
@@ -429,22 +429,22 @@ unittest {
 	k.a = 1;
 	k.b = 2;
 	k.c = 3;
-	assert(k.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
+	assert(k.encode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3]);
 
 	auto l = k.new L();
 	l.d = 4;
 	l.e = 5;
-	assert(l.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5]);
+	assert(l.encode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5]);
 
 	auto m = l.new M();
 	m.f = 6;
 	m.g = 7;
 	m.h = 8;
-	assert(m.autoEncode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
+	assert(m.encode() == [1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 4, 0, 5, 6, 7, 8]);
 
 	auto n = new K.N();
 	n.i = 12;
-	assert(n.autoEncode() == [0, 0, 0, 12]);
+	assert(n.encode() == [0, 0, 0, 12]);
 
 	buffer.reset();
 	m.encodeBody(buffer);
@@ -499,9 +499,9 @@ unittest {
 
 	auto r = new R();
 	r.array = [-1, 0, 1];
-	assert(r.autoEncode() == [0, 3, 255, 255, 0, 0, 0, 1]);
+	assert(r.encode() == [0, 3, 255, 255, 0, 0, 0, 1]);
 
-	r.autoDecode([0, 3, 255, 255, 0, 0, 0, 1]);
+	r.decode([0, 3, 255, 255, 0, 0, 0, 1]);
 	assert(r.array == [-1, 0, 1]);
 
 	// custom attribute
@@ -535,9 +535,9 @@ unittest {
 
 	auto s = new S();
 	s.uuid = UUID(data);
-	assert(s.autoEncode() == [18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
+	assert(s.encode() == [18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
 
-	a.autoDecode([18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
+	a.decode([18, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 0, 0, 0]);
 	assert(s.uuid.data == data);
 	
 }

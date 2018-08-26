@@ -9,20 +9,24 @@ import xbuffer.varint : isVar;
 
 class Packet {
 
-	void encode(Buffer buffer) {
+	ubyte[] encode(Buffer buffer) {
 		encodeId(buffer);
 		encodeBody(buffer);
+		return buffer.data!ubyte;
 	}
 
 	void encodeId(Buffer buffer) {}
 
 	void encodeBody(Buffer buffer) {}
 
-	ubyte[] autoEncode() {
+	ubyte[] encode() {
 		Buffer buffer = createInputBuffer();
 		scope(exit) xfree(buffer);
-		encode(buffer);
-		return buffer.data!ubyte.dup; // move to GC
+		return encode(buffer).dup; // move to GC
+	}
+
+	deprecated("Use encode instead") ubyte[] autoEncode() {
+		return encode();
 	}
 
 	Buffer createInputBuffer() @nogc {
@@ -38,10 +42,14 @@ class Packet {
 
 	void decodeBody(Buffer buffer) {}
 
-	void autoDecode(in ubyte[] data) {
+	void decode(in ubyte[] data) {
 		Buffer buffer = createOutputBuffer(data);
 		scope(exit) xfree(buffer);
 		decode(buffer);
+	}
+
+	deprecated("Use decode instead") void autoDecode(in ubyte[] data) {
+		return decode(data);
 	}
 
 	Buffer createOutputBuffer(in ubyte[] data) @nogc {
