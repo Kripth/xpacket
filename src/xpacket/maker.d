@@ -289,15 +289,15 @@ unittest {
 
 	}
 
-	/+static struct F {
+	static struct F {
 
 		static const ubyte[] bytes = [3, 3, 3];
 
-		void encodeBody(Buffer buffer) @nogc {
+		void serialize(Buffer buffer) {
 			buffer.write(bytes);
 		}
 
-		void decodeBody(Buffer buffer) {
+		void deserialize(Buffer buffer) {
 			buffer.read!(ubyte[])(3);
 		}
 
@@ -323,7 +323,7 @@ unittest {
 	buffer.data = cast(ubyte[])[12, 0, 1, 0, 0, 0, 1, 5, 3, 3, 3];
 	g.decodeBody(buffer);
 	assert(g.a == 12);
-	assert(g.b == [E(1, 5)]);+/
+	assert(g.b == [E(1, 5)]);
 
 	// inheritance
 
